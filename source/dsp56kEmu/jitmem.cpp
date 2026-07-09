@@ -23,10 +23,10 @@ namespace dsp56k
 	void memTraceBegin(const uint32_t _lo, const uint32_t _hi) { g_memTraceLo = _lo; g_memTraceHi = _hi; g_memTraceActive = true; }
 	void memTraceEnd()                                         { g_memTraceActive = false; }
 	bool memTraceActive()                                      { return g_memTraceActive; }
-	void memTraceRecord(const uint8_t _area, const bool _write, const uint32_t _addr, const uint32_t _value)
+	void memTraceRecord(const uint8_t _area, const bool _write, const uint32_t _addr, const uint32_t _value, const uint32_t _pc)
 	{
 		if(g_memTraceActive && _addr >= g_memTraceLo && _addr < g_memTraceHi)
-			g_memTrace.push_back({_area, static_cast<uint8_t>(_write ? 1 : 0), _addr, _value});
+			g_memTrace.push_back({_area, static_cast<uint8_t>(_write ? 1 : 0), _addr, _value, _pc});
 	}
 	const std::vector<MemTraceEntry>& memTraceData() { return g_memTrace; }
 	void memTraceClear() { g_memTrace.clear(); }
@@ -505,7 +505,7 @@ namespace dsp56k
 	void callDSPMemWrite(DSP* const _dsp, const EMemArea _area, const TWord _offset, const TWord _value)
 	{
 		if(g_memTraceActive)
-			memTraceRecord(static_cast<uint8_t>(_area), true, _offset, _value);
+			memTraceRecord(static_cast<uint8_t>(_area), true, _offset, _value, _dsp->getPC().toWord());
 		EMemArea a(_area);
 		TWord o(_offset);
 		_dsp->memory().dspWrite(a, o, _value);
@@ -515,7 +515,7 @@ namespace dsp56k
 	{
 		const TWord v = _dsp->memory().get(_area, _offset);
 		if(g_memTraceActive)
-			memTraceRecord(static_cast<uint8_t>(_area), false, _offset, v);
+			memTraceRecord(static_cast<uint8_t>(_area), false, _offset, v, _dsp->getPC().toWord());
 		return v;
 	}
 
