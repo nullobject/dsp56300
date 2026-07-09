@@ -23,13 +23,15 @@ namespace dsp56k
 	void memTraceBegin(const uint32_t _lo, const uint32_t _hi) { g_memTraceLo = _lo; g_memTraceHi = _hi; g_memTraceActive = true; }
 	void memTraceEnd()                                         { g_memTraceActive = false; }
 	bool memTraceActive()                                      { return g_memTraceActive; }
-	void memTraceRecord(const uint8_t _area, const uint32_t _addr, const uint32_t _value)
+	void memTraceRecord(const uint8_t _area, const bool _write, const uint32_t _addr, const uint32_t _value)
 	{
 		if(g_memTraceActive && _addr >= g_memTraceLo && _addr < g_memTraceHi)
-			g_memTrace.push_back({_area, _addr, _value});
+			g_memTrace.push_back({_area, static_cast<uint8_t>(_write ? 1 : 0), _addr, _value});
 	}
 	const std::vector<MemTraceEntry>& memTraceData() { return g_memTrace; }
 	void memTraceClear() { g_memTrace.clear(); }
+
+	TWord callDSPMemRead(DSP* _dsp, EMemArea _area, TWord _offset); // fwd decl (used by readDspMemory)
 
 	void Jitmem::mov(uint32_t* _dst, const uint32_t& _imm) const
 	{
@@ -325,6 +327,33 @@ namespace dsp56k
 
 	Jitmem::MemoryRef Jitmem::readDspMemory(DspValue& _dst, const EMemArea _area, const JitRegGP& _offset, MemoryRef&& _ref) const
 	{
+		if(m_block.getConfig().memoryReadsCallCpp)
+		{
+			{
+				const FuncArg r0(m_block, 0);
+				const FuncArg r1(m_block, 1);
+				const FuncArg r2(m_block, 2);
+
+				auto assignArg = [this](const uint32_t _index, const JitRegGP& _d, const JitRegGP& _s)
+				{
+					if(_index == 0)
+						makeDspPtr(_d.as<JitReg64>());
+					else if(r32(_d) != r32(_s))
+						m_block.asm_().mov(r32(_d), r32(_s));
+				};
+
+				assignFuncArgs({r0, r2}, {regDspPtr, _offset}, assignArg);
+				m_block.asm_().mov(r32(r1), asmjit::Imm(_area));
+
+				m_block.stack().call(asmjit::func_as_ptr(&callDSPMemRead));
+			}
+
+			if (!_dst.isRegValid())
+				_dst.temp(DspValue::Memory);
+			m_block.asm_().mov(r32(_dst.get()), r32(regReturnVal));
+			return std::move(_ref);
+		}
+
 		const SkipLabel skip(m_block.asm_());
 
 		if (!_dst.isRegValid())
@@ -476,10 +505,18 @@ namespace dsp56k
 	void callDSPMemWrite(DSP* const _dsp, const EMemArea _area, const TWord _offset, const TWord _value)
 	{
 		if(g_memTraceActive)
-			memTraceRecord(static_cast<uint8_t>(_area), _offset, _value);
+			memTraceRecord(static_cast<uint8_t>(_area), true, _offset, _value);
 		EMemArea a(_area);
 		TWord o(_offset);
 		_dsp->memory().dspWrite(a, o, _value);
+	}
+
+	TWord callDSPMemRead(DSP* const _dsp, const EMemArea _area, const TWord _offset)
+	{
+		const TWord v = _dsp->memory().get(_area, _offset);
+		if(g_memTraceActive)
+			memTraceRecord(static_cast<uint8_t>(_area), false, _offset, v);
+		return v;
 	}
 
 	Jitmem::MemoryRef Jitmem::writeDspMemory(const EMemArea _area, const JitRegGP& _offset, const DspValue& _src, MemoryRef&& _ref) const

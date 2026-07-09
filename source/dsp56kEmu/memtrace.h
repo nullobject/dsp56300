@@ -13,6 +13,7 @@ namespace dsp56k
 	struct MemTraceEntry
 	{
 		uint8_t  area;   // EMemArea
+		uint8_t  write;  // 1 = write, 0 = read
 		uint32_t addr;
 		uint32_t value;
 	};
@@ -20,7 +21,7 @@ namespace dsp56k
 	void                              memTraceBegin(uint32_t _lo, uint32_t _hi);
 	void                              memTraceEnd();
 	bool                              memTraceActive();
-	void                              memTraceRecord(uint8_t _area, uint32_t _addr, uint32_t _value);
+	void                              memTraceRecord(uint8_t _area, bool _write, uint32_t _addr, uint32_t _value);
 	const std::vector<MemTraceEntry>& memTraceData();
 	void                              memTraceClear();
 }
