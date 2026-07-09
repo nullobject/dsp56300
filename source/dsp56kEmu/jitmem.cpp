@@ -6,11 +6,31 @@
 #include "jitemitter.h"
 #include "jithelper.h"
 #include "jitregtracker.h"
+#include "memtrace.h"
 
 constexpr bool g_debugMemoryWrites = false;
 
 namespace dsp56k
 {
+	// --- memory-write tracer (see memtrace.h) ---
+	namespace
+	{
+		bool                       g_memTraceActive = false;
+		uint32_t                   g_memTraceLo = 0;
+		uint32_t                   g_memTraceHi = 0;
+		std::vector<MemTraceEntry> g_memTrace;
+	}
+	void memTraceBegin(const uint32_t _lo, const uint32_t _hi) { g_memTraceLo = _lo; g_memTraceHi = _hi; g_memTraceActive = true; }
+	void memTraceEnd()                                         { g_memTraceActive = false; }
+	bool memTraceActive()                                      { return g_memTraceActive; }
+	void memTraceRecord(const uint8_t _area, const uint32_t _addr, const uint32_t _value)
+	{
+		if(g_memTraceActive && _addr >= g_memTraceLo && _addr < g_memTraceHi)
+			g_memTrace.push_back({_area, _addr, _value});
+	}
+	const std::vector<MemTraceEntry>& memTraceData() { return g_memTrace; }
+	void memTraceClear() { g_memTrace.clear(); }
+
 	void Jitmem::mov(uint32_t* _dst, const uint32_t& _imm) const
 	{
 #ifdef HAVE_X86_64
@@ -455,6 +475,8 @@ namespace dsp56k
 
 	void callDSPMemWrite(DSP* const _dsp, const EMemArea _area, const TWord _offset, const TWord _value)
 	{
+		if(g_memTraceActive)
+			memTraceRecord(static_cast<uint8_t>(_area), _offset, _value);
 		EMemArea a(_area);
 		TWord o(_offset);
 		_dsp->memory().dspWrite(a, o, _value);
