@@ -10,6 +10,8 @@
 
 namespace dsp56k
 {
+	class DSP;
+
 	struct MemTraceEntry
 	{
 		uint8_t  area;   // EMemArea
@@ -64,6 +66,22 @@ namespace dsp56k
 										// told apart from steady-state traffic
 	uint64_t* periphProfileMarkReads();
 	uint64_t* periphProfileMarkWrites();
+
+	// Per-instruction trace hook, for lockstep co-simulation against an
+	// independent implementation. Emitted ahead of every op, after flushing the
+	// JIT register pool, so the sink sees coherent architectural state as it
+	// stood *before* the instruction runs. Pair it with a JitConfig of
+	// maxInstructionsPerBlock = 1 and linkJitBlocks = false, otherwise memory
+	// writes from a whole block land between two consecutive callbacks.
+	// Arming is separate from installing the sink, because the hook is emitted at
+	// compile time: a sink installed before boot would put the hook in every block
+	// the boot code compiles and trace from DSP reset instead of from the window.
+	// Arm at the window, then destroy all blocks so they are re-emitted with it.
+	using InstTraceSink = void (*)(DSP* _dsp, uint32_t _pc);
+	void instTraceSetSink(InstTraceSink _sink);
+	void instTraceArm(bool _armed);
+	bool instTraceActive();
+	void callDSPInstTrace(DSP* _dsp, uint32_t _pc);
 
 	void                              memTraceBegin(uint32_t _lo, uint32_t _hi);
 	void                              memTraceEnd();

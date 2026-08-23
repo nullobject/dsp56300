@@ -1,4 +1,5 @@
 #include "jitops.h"
+#include "memtrace.h"
 
 #include "dsp.h"
 #include "jitblock.h"
@@ -280,6 +281,14 @@ namespace dsp56k
 		m_opWordA = _op;
 		m_opWordB = _opB;
 		m_opSize = 1;
+
+		// lockstep trace: flush the register pool first so the sink reads real
+		// architectural state rather than whatever is still live in host registers
+		if(instTraceActive())
+		{
+			m_block.dspRegPool().debugStoreAll();
+			callDSPFunc(&callDSPInstTrace, _pc);
+		}
 
 		if(!_op)
 		{

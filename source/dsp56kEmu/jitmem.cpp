@@ -48,9 +48,21 @@ namespace dsp56k
 			return _area * g_periphCount + (a - g_periphFirst);
 		}
 		uint32_t                   g_fetchUnencodable = 0;
+		InstTraceSink              g_instTraceSink = nullptr;
+		bool                       g_instTraceArmed = false;
 	}
 
 	void memTraceSetSink(const MemTraceSink _sink)             { g_memTraceSink = _sink; }
+
+	void instTraceSetSink(const InstTraceSink _sink) { g_instTraceSink = _sink; }
+	void instTraceArm(const bool _armed)             { g_instTraceArmed = _armed; }
+	bool instTraceActive()                           { return g_instTraceArmed && g_instTraceSink; }
+
+	void callDSPInstTrace(DSP* const _dsp, const TWord _pc)
+	{
+		if(g_instTraceSink)
+			g_instTraceSink(_dsp, _pc);
+	}
 
 	void fetchProfileEnable(const uint32_t _pMemSize)
 	{
