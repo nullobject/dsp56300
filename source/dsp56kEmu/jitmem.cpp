@@ -1,5 +1,7 @@
 #include "jitmem.h"
 
+#include <algorithm>
+
 #include "dsp.h"
 #include "jitblock.h"
 #include "jitdspvalue.h"
@@ -19,13 +21,39 @@ namespace dsp56k
 		uint32_t                   g_memTraceLo = 0;
 		uint32_t                   g_memTraceHi = 0;
 		std::vector<MemTraceEntry> g_memTrace;
+		MemTraceSink               g_memTraceSink = nullptr;
+
+		std::vector<uint64_t>      g_fetchCounts;
+		std::vector<uint32_t>      g_fetchSizes;
+		uint32_t                   g_fetchUnencodable = 0;
 	}
+
+	void memTraceSetSink(const MemTraceSink _sink)             { g_memTraceSink = _sink; }
+
+	void fetchProfileEnable(const uint32_t _pMemSize)
+	{
+		g_fetchCounts.assign(_pMemSize, 0);
+		g_fetchSizes.assign(_pMemSize, 0);
+		g_fetchUnencodable = 0;
+	}
+	bool      fetchProfileActive()      { return !g_fetchCounts.empty(); }
+	void      fetchProfileClear()       { std::fill(g_fetchCounts.begin(), g_fetchCounts.end(), 0ull); }
+	uint64_t* fetchProfileCounts()      { return g_fetchCounts.data(); }
+	uint32_t* fetchProfileSizes()       { return g_fetchSizes.data(); }
+	uint32_t  fetchProfileSize()        { return static_cast<uint32_t>(g_fetchCounts.size()); }
+	uint32_t  fetchProfileUnencodable() { return g_fetchUnencodable; }
+	void      fetchProfileCountUnencodable() { ++g_fetchUnencodable; }
+
 	void memTraceBegin(const uint32_t _lo, const uint32_t _hi) { g_memTraceLo = _lo; g_memTraceHi = _hi; g_memTraceActive = true; }
 	void memTraceEnd()                                         { g_memTraceActive = false; }
 	bool memTraceActive()                                      { return g_memTraceActive; }
 	void memTraceRecord(const uint8_t _area, const bool _write, const uint32_t _addr, const uint32_t _value, const uint32_t _pc)
 	{
-		if(g_memTraceActive && _addr >= g_memTraceLo && _addr < g_memTraceHi)
+		if(!g_memTraceActive || _addr < g_memTraceLo || _addr >= g_memTraceHi)
+			return;
+		if(g_memTraceSink)
+			g_memTraceSink(_area, _write, _addr, _value, _pc);
+		else
 			g_memTrace.push_back({_area, static_cast<uint8_t>(_write ? 1 : 0), _addr, _value, _pc});
 	}
 	const std::vector<MemTraceEntry>& memTraceData() { return g_memTrace; }

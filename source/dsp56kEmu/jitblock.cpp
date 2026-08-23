@@ -7,6 +7,7 @@
 #include "jitblockruntimedata.h"
 #include "jitops.h"
 #include "memory.h"
+#include "memtrace.h"
 #include "opcodecycles.h"
 
 namespace dsp56k
@@ -456,6 +457,22 @@ namespace dsp56k
 		m_asm.setCursor(cursorInsertIncreaseInstructionCount);
 		increaseInstructionCount(asmjit::Imm(_rt.getEncodedInstructionCount()));
 		increaseCycleCount(asmjit::Imm(_rt.getEncodedCycleCount()));
+
+		// analysis: one counter bump per block execution. Multiplied by pMemSize
+		// afterwards this is the instruction-fetch traffic the DSP would generate.
+		if(fetchProfileActive() && pcFirst < fetchProfileSize())
+		{
+			auto& counter = fetchProfileCounts()[pcFirst];
+			if(Jitmem::pointerOffset(&counter, &m_dsp.regs()))
+			{
+				fetchProfileSizes()[pcFirst] = pMemSize;
+				increaseUint64(asmjit::Imm(1), counter);
+			}
+			else
+			{
+				fetchProfileCountUnencodable();
+			}
+		}
 		m_asm.setCursor(m_asm.lastNode());
 
 		auto jumpIfLoop = [&](const asmjit::Label& _ifTrue, const JitReg32& _regPC, const JitReg32& _regLC, const JitReg32& _temp)
