@@ -40,6 +40,31 @@ namespace dsp56k
 	uint32_t  fetchProfileUnencodable();	// blocks whose counter was out of displacement range
 	void      fetchProfileCountUnencodable();
 
+	// Opcode profiling. Recorded at compile time, one entry per P word, so a
+	// post-run pass can weight each instruction by how often its block ran.
+	// g_opcodes[instr].m_assembly gives the mnemonic.
+	void      opcodeProfileEnable(uint32_t _pMemSize);
+	bool      opcodeProfileActive();
+	uint32_t* opcodeProfileWord();		// [pc] -> the opcode word, 0xffffffff where nothing was compiled
+	uint8_t*  opcodeProfileOpSize();	// [pc] -> length in P words
+	uint8_t*  opcodeProfileParallel();	// [pc] -> 1 if the opcode carries a parallel move
+
+	// Peripheral profiling. Peripheral space is not reachable through Memory - the
+	// JIT routes it through readPeriph/writePeriph - so it needs its own hooks.
+	// Indexed by [area * 128 + (addr - 0xffff80)], area 0 = X, 1 = Y.
+	void      periphProfileEnable();
+	bool      periphProfileActive();
+	void      periphProfileRecord(uint32_t _area, uint32_t _addr, bool _write);
+	void      periphProfileSite(uint32_t _area, uint32_t _addr);
+	uint64_t* periphProfileReads();
+	uint64_t* periphProfileWrites();
+	uint32_t* periphProfileSites();		// compile-time sites, for the readAsPtr fast
+										// path whose reads never call back into C++
+	void      periphProfileMark();		// snapshot the counts, so boot-time setup can be
+										// told apart from steady-state traffic
+	uint64_t* periphProfileMarkReads();
+	uint64_t* periphProfileMarkWrites();
+
 	void                              memTraceBegin(uint32_t _lo, uint32_t _hi);
 	void                              memTraceEnd();
 	bool                              memTraceActive();

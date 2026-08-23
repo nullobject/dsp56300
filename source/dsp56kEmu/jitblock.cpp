@@ -362,6 +362,13 @@ namespace dsp56k
 			_rt.m_singleOpWordA = opA;
 			_rt.m_singleOpWordB = opB;
 
+			if(opcodeProfileActive() && opPC < m_dsp.memory().sizeP())
+			{
+				opcodeProfileWord()[opPC] = opA;
+				opcodeProfileOpSize()[opPC] = static_cast<uint8_t>(ops.getOpSize());
+				opcodeProfileParallel()[opPC] = OpcodeInfo::isParallelOpcode(opA) ? 1 : 0;
+			}
+
 			pMemSize += ops.getOpSize();
 			++_rt.m_encodedInstructionCount;
 

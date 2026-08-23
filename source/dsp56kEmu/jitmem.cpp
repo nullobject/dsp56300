@@ -26,6 +26,27 @@ namespace dsp56k
 		std::vector<uint64_t>      g_fetchCounts;
 		std::vector<uint32_t>      g_fetchSizes;
 		std::vector<uint32_t>      g_fetchInstrs;
+
+		std::vector<uint32_t>      g_opcodeWord;
+		std::vector<uint8_t>       g_opcodeSize;
+		std::vector<uint8_t>       g_opcodeParallel;
+
+		constexpr uint32_t         g_periphFirst = 0xffff80;
+		constexpr uint32_t         g_periphCount = 128;
+		bool                       g_periphActive = false;
+		std::vector<uint64_t>      g_periphReads;
+		std::vector<uint64_t>      g_periphWrites;
+		std::vector<uint32_t>      g_periphSites;
+		std::vector<uint64_t>      g_periphMarkReads;
+		std::vector<uint64_t>      g_periphMarkWrites;
+
+		uint32_t periphIndex(const uint32_t _area, const uint32_t _addr)
+		{
+			const auto a = _addr | 0xff0000;
+			if(a < g_periphFirst || a > 0xffffff || _area > 1)
+				return ~0u;
+			return _area * g_periphCount + (a - g_periphFirst);
+		}
 		uint32_t                   g_fetchUnencodable = 0;
 	}
 
@@ -45,6 +66,53 @@ namespace dsp56k
 	uint32_t* fetchProfileInstrs()      { return g_fetchInstrs.data(); }
 	uint32_t  fetchProfileSize()        { return static_cast<uint32_t>(g_fetchCounts.size()); }
 	uint32_t  fetchProfileUnencodable() { return g_fetchUnencodable; }
+
+	void opcodeProfileEnable(const uint32_t _pMemSize)
+	{
+		g_opcodeWord.assign(_pMemSize, 0xffffffff);
+		g_opcodeSize.assign(_pMemSize, 0);
+		g_opcodeParallel.assign(_pMemSize, 0);
+	}
+	bool      opcodeProfileActive()   { return !g_opcodeWord.empty(); }
+	uint32_t* opcodeProfileWord()     { return g_opcodeWord.data(); }
+	uint8_t*  opcodeProfileOpSize()   { return g_opcodeSize.data(); }
+	uint8_t*  opcodeProfileParallel() { return g_opcodeParallel.data(); }
+
+	void periphProfileEnable()
+	{
+		g_periphReads.assign(2 * g_periphCount, 0);
+		g_periphWrites.assign(2 * g_periphCount, 0);
+		g_periphSites.assign(2 * g_periphCount, 0);
+		g_periphMarkReads.assign(2 * g_periphCount, 0);
+		g_periphMarkWrites.assign(2 * g_periphCount, 0);
+		g_periphActive = true;
+	}
+	bool      periphProfileActive() { return g_periphActive; }
+	uint64_t* periphProfileReads()  { return g_periphReads.data(); }
+	uint64_t* periphProfileWrites() { return g_periphWrites.data(); }
+	uint32_t* periphProfileSites()  { return g_periphSites.data(); }
+	uint64_t* periphProfileMarkReads()  { return g_periphMarkReads.data(); }
+	uint64_t* periphProfileMarkWrites() { return g_periphMarkWrites.data(); }
+
+	void periphProfileMark()
+	{
+		g_periphMarkReads = g_periphReads;
+		g_periphMarkWrites = g_periphWrites;
+	}
+
+	void periphProfileRecord(const uint32_t _area, const uint32_t _addr, const bool _write)
+	{
+		const auto i = periphIndex(_area, _addr);
+		if(i != ~0u)
+			(_write ? g_periphWrites : g_periphReads)[i]++;
+	}
+
+	void periphProfileSite(const uint32_t _area, const uint32_t _addr)
+	{
+		const auto i = periphIndex(_area, _addr);
+		if(i != ~0u)
+			g_periphSites[i]++;
+	}
 	void      fetchProfileCountUnencodable() { ++g_fetchUnencodable; }
 
 	void memTraceBegin(const uint32_t _lo, const uint32_t _hi) { g_memTraceLo = _lo; g_memTraceHi = _hi; g_memTraceActive = true; }
@@ -729,11 +797,15 @@ namespace dsp56k
 
 	TWord callDSPMemReadPeriph(DSP* const _dsp, const TWord _area, const TWord _offset, Instruction _inst)
 	{
+		if(g_periphActive)
+			periphProfileRecord(_area, _offset, false);
 		return _dsp->getPeriph(_area)->read(_offset | 0xff0000, _inst);
 	}
 
 	void callDSPMemWritePeriph(DSP* const _dsp, const TWord _area, const TWord _offset, const TWord _value)
 	{
+		if(g_periphActive)
+			periphProfileRecord(_area, _offset, true);
 		_dsp->getPeriph(_area)->write(_offset | 0xff0000, _value);
 	}
 
@@ -747,6 +819,12 @@ namespace dsp56k
 
 		if(memPtr)
 		{
+			// this path reads the register straight out of host memory, so it never
+			// calls back into C++ and its reads cannot be counted - record the code
+			// site instead, which still proves the register is used
+			if(g_periphActive)
+				periphProfileSite(_area == MemArea_Y ? 1 : 0, _offset);
+
 			if (!_dst.isRegValid())
 				_dst.temp(DspValue::Memory);
 
