@@ -25,6 +25,7 @@ namespace dsp56k
 
 		std::vector<uint64_t>      g_fetchCounts;
 		std::vector<uint32_t>      g_fetchSizes;
+		std::vector<uint32_t>      g_fetchInstrs;
 		uint32_t                   g_fetchUnencodable = 0;
 	}
 
@@ -34,12 +35,14 @@ namespace dsp56k
 	{
 		g_fetchCounts.assign(_pMemSize, 0);
 		g_fetchSizes.assign(_pMemSize, 0);
+		g_fetchInstrs.assign(_pMemSize, 0);
 		g_fetchUnencodable = 0;
 	}
 	bool      fetchProfileActive()      { return !g_fetchCounts.empty(); }
 	void      fetchProfileClear()       { std::fill(g_fetchCounts.begin(), g_fetchCounts.end(), 0ull); }
 	uint64_t* fetchProfileCounts()      { return g_fetchCounts.data(); }
 	uint32_t* fetchProfileSizes()       { return g_fetchSizes.data(); }
+	uint32_t* fetchProfileInstrs()      { return g_fetchInstrs.data(); }
 	uint32_t  fetchProfileSize()        { return static_cast<uint32_t>(g_fetchCounts.size()); }
 	uint32_t  fetchProfileUnencodable() { return g_fetchUnencodable; }
 	void      fetchProfileCountUnencodable() { ++g_fetchUnencodable; }

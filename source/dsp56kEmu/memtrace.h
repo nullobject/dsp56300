@@ -35,6 +35,7 @@ namespace dsp56k
 	void      fetchProfileClear();
 	uint64_t* fetchProfileCounts();
 	uint32_t* fetchProfileSizes();
+	uint32_t* fetchProfileInstrs();
 	uint32_t  fetchProfileSize();
 	uint32_t  fetchProfileUnencodable();	// blocks whose counter was out of displacement range
 	void      fetchProfileCountUnencodable();

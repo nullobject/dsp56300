@@ -466,6 +466,7 @@ namespace dsp56k
 			if(Jitmem::pointerOffset(&counter, &m_dsp.regs()))
 			{
 				fetchProfileSizes()[pcFirst] = pMemSize;
+				fetchProfileInstrs()[pcFirst] = _rt.getEncodedInstructionCount();
 				increaseUint64(asmjit::Imm(1), counter);
 			}
 			else
