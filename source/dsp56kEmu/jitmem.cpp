@@ -715,6 +715,17 @@ namespace dsp56k
 			m_block.asm_().jge(skip.get());
 		}
 
+		if(m_block.getConfig().memoryWritesCallCpp || g_debugMemoryWrites)
+		{
+			// A 48-bit write goes straight through a raw pointer, which never
+			// reaches callDSPMemWrite and so is invisible to the memory tracer.
+			// Route each half through the single-word path when writes are being
+			// observed, so an L: move is recorded like any other store.
+			writeDspMemory(MemArea_X, _offset, _srcX, noRef());
+			writeDspMemory(MemArea_Y, _offset, _srcY, noRef());
+			return;
+		}
+
 		DspValue tempXY(m_block);
 		auto px = getMemAreaPtr(tempXY, MemArea_X, _offset, noRef());
 		writeDspMemory(px, _srcX);
@@ -727,6 +738,16 @@ namespace dsp56k
 	{
 		if (_offset >= m_block.dsp().memory().sizeXY())
 			return noRef();
+
+		if(m_block.getConfig().memoryWritesCallCpp || g_debugMemoryWrites)
+		{
+			// See the register-offset overload above: the raw-pointer write is
+			// not observable, so hand both halves to the single-word path.
+			writeDspMemory(MemArea_X, _offset, _srcX, noRef());
+			if(_offset < m_block.dsp().memory().getBridgedMemoryAddress())
+				writeDspMemory(MemArea_Y, _offset, _srcY, noRef());
+			return noRef();
+		}
 
 		auto p = getMemAreaPtr(MemArea_X, _offset, noRef(), false);
 		writeDspMemory(p, _srcX);
