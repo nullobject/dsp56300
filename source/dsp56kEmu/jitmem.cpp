@@ -34,6 +34,7 @@ namespace dsp56k
 		constexpr uint32_t         g_periphFirst = 0xffff80;
 		constexpr uint32_t         g_periphCount = 128;
 		bool                       g_periphActive = false;
+		PeriphTraceSink            g_periphTraceSink = nullptr;
 		std::vector<uint64_t>      g_periphReads;
 		std::vector<uint64_t>      g_periphWrites;
 		std::vector<uint32_t>      g_periphSites;
@@ -117,6 +118,14 @@ namespace dsp56k
 		const auto i = periphIndex(_area, _addr);
 		if(i != ~0u)
 			(_write ? g_periphWrites : g_periphReads)[i]++;
+	}
+
+	void periphTraceSetSink(const PeriphTraceSink _sink) { g_periphTraceSink = _sink; }
+	bool periphTraceActive()                             { return g_periphTraceSink != nullptr; }
+	void periphTraceRecord(const uint8_t _area, const bool _write, const uint32_t _addr, const uint32_t _value, const uint32_t _pc)
+	{
+		if(g_periphTraceSink)
+			g_periphTraceSink(_area, _write, _addr, _value, _pc);
 	}
 
 	void periphProfileSite(const uint32_t _area, const uint32_t _addr)
@@ -832,13 +841,18 @@ namespace dsp56k
 	{
 		if(g_periphActive)
 			periphProfileRecord(_area, _offset, false);
-		return _dsp->getPeriph(_area)->read(_offset | 0xff0000, _inst);
+		const auto v = _dsp->getPeriph(_area)->read(_offset | 0xff0000, _inst);
+		if(g_periphTraceSink)
+			periphTraceRecord(static_cast<uint8_t>(_area), false, _offset | 0xff0000, v, _dsp->getPC().toWord());
+		return v;
 	}
 
 	void callDSPMemWritePeriph(DSP* const _dsp, const TWord _area, const TWord _offset, const TWord _value)
 	{
 		if(g_periphActive)
 			periphProfileRecord(_area, _offset, true);
+		if(g_periphTraceSink)
+			periphTraceRecord(static_cast<uint8_t>(_area), true, _offset | 0xff0000, _value, _dsp->getPC().toWord());
 		_dsp->getPeriph(_area)->write(_offset | 0xff0000, _value);
 	}
 
@@ -848,7 +862,9 @@ namespace dsp56k
 
 		auto* periph = m_block.dsp().getPeriph(_area);
 
-		const auto* memPtr = periph->readAsPtr(_offset, _inst);
+		// the fast path is skipped while a peripheral trace sink is installed: it
+		// reads host memory directly and the access would never be recorded
+		const auto* memPtr = g_periphTraceSink ? nullptr : periph->readAsPtr(_offset, _inst);
 
 		if(memPtr)
 		{

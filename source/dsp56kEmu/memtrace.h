@@ -67,6 +67,18 @@ namespace dsp56k
 	uint64_t* periphProfileMarkReads();
 	uint64_t* periphProfileMarkWrites();
 
+	// Peripheral access tracing. The counters above say which registers are used;
+	// this says what was actually read or written, in order, with the value. A
+	// register block implemented somewhere else cannot be graded against counts.
+	// Installing a sink also disables the readAsPtr fast path, which otherwise
+	// reads a register straight out of host memory without ever calling back into
+	// C++ - the value handed to the DSP is the same either way, so the only thing
+	// that changes is whether the access can be seen.
+	using PeriphTraceSink = void (*)(uint8_t _area, bool _write, uint32_t _addr, uint32_t _value, uint32_t _pc);
+	void periphTraceSetSink(PeriphTraceSink _sink);
+	bool periphTraceActive();
+	void periphTraceRecord(uint8_t _area, bool _write, uint32_t _addr, uint32_t _value, uint32_t _pc);
+
 	// Per-instruction trace hook, for lockstep co-simulation against an
 	// independent implementation. Emitted ahead of every op, after flushing the
 	// JIT register pool, so the sink sees coherent architectural state as it
