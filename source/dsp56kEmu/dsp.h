@@ -2,6 +2,7 @@
 
 #include "disasm.h"
 #include "dspconfig.h"
+#include "memtrace.h"
 #include "dspregs.h"
 #include "registers.h"
 #include "memory.h"
@@ -33,7 +34,7 @@ namespace dsp56k
 	
 	template<typename Ta, typename Tb> void dspExecPeripherals(DSP* _dsp) noexcept;
 
-	static constexpr bool g_useJIT = g_jitSupported;
+	static constexpr bool g_useJIT = g_jitSupported && DSP56300_USE_JIT;
 
 	class DSP final
 	{
@@ -201,6 +202,21 @@ namespace dsp56k
 #endif
 
 			pcCurrentInstruction = reg.pc.toWord();
+
+			// lockstep trace: no register flush needed here, unlike the JIT's
+			// hook in JitOps::emit() -- the interpreter has been working on reg
+			// all along, so it is already what the machine holds.
+			//
+			// SR is the one exception. E, U and N are computed lazily, so
+			// reg.sr carries the bits from before the last ALU instruction
+			// until somebody asks for them through getSR() or sr_test(). An
+			// observer reading reg directly is not somebody, and gets a
+			// condition code one arithmetic instruction out of date.
+			if(instTraceActive())
+			{
+				updateDirtyCCR();
+				callDSPInstTrace(this, pcCurrentInstruction);
+			}
 
 			const auto op = fetchPC();
 

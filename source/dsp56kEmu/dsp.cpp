@@ -1,6 +1,7 @@
 // DSP 56300 family 24-bit DSP emulator
 
 #include "dsp.h"
+#include "memtrace.h"
 
 #include <iomanip>
 #include <cstring>
@@ -225,6 +226,18 @@ namespace dsp56k
 
 			m_opWordB = op1;
 
+			// A fast interrupt's two instructions are executed here rather than
+			// through execInterpreter, so they miss its trace hook. The JIT path
+			// does not miss them: its hook is emitted into the block at vba like
+			// any other. An interpreter trace was therefore dropping both records
+			// while still recording the memory writes they made -- which reads as
+			// an ordinary instruction writing somewhere it cannot reach.
+			if(instTraceActive())
+			{
+				updateDirtyCCR();
+				callDSPInstTrace(this, vba);
+			}
+
 			execOp(op0);
 
 			const auto jumped = reg.sp.var - oldSP;
@@ -234,6 +247,13 @@ namespace dsp56k
 			{
 				pcCurrentInstruction = vba+1;
 				m_opWordB = 0;
+
+				if(instTraceActive())
+				{
+					updateDirtyCCR();
+					callDSPInstTrace(this, vba+1);
+				}
+
 				execOp(op1);
 
 				// fast interrupt done
@@ -555,16 +575,37 @@ namespace dsp56k
 		pcCurrentInstruction = reg.pc.var;
 		const auto op = fetchPC();
 
+		// The repeated instruction runs here rather than through
+		// execInterpreter, so without a hook of its own a REP records no
+		// instruction at all and every write its iterations make is attributed
+		// to the REP. The JIT path emits one record per iteration -- with the
+		// registers frozen at whatever the pool last flushed, which is what
+		// nightcapaudio/pathogen#34 is about; the interpreter is working on reg
+		// itself, so its records carry the address register actually walking.
+		const auto tracing = instTraceActive();
+		const auto repeatedPc = pcCurrentInstruction;
+
+		if(tracing)
+		{
+			updateDirtyCCR();
+			callDSPInstTrace(this, repeatedPc);
+		}
+
 		--reg.lc.var;
 		execOp(op);
 
-		const auto& opCache = m_opcodeCache[pcCurrentInstruction];
+		const auto& opCache = m_opcodeCache[repeatedPc];
 
 		const auto& func = opCache.op;
 
 		while( reg.lc.var > 0 )
 		{
 			--reg.lc.var;
+			if(tracing)
+			{
+				updateDirtyCCR();
+				callDSPInstTrace(this, repeatedPc);
+			}
 			(this->*func)(op);
 			++m_instructions;
 //			traceOp();
@@ -1015,6 +1056,15 @@ namespace dsp56k
 
 	bool DSP::memWritePeriph( EMemArea _area, TWord _offset, TWord _value )
 	{
+		// See Memory::dspWrite, including why this is interpreter-only.
+		// Peripheral space never reaches Memory at all, so it needs its own hook.
+		//
+		// The sink takes a peripheral *index*, 0 for X and 1 for Y, which is what
+		// Jitmem::readPeriph passes it -- not an EMemArea, where X is 1. Handing it
+		// the enum labels every X access as Y.
+		if constexpr(!g_useJIT)
+		if(periphTraceActive())
+			periphTraceRecord(static_cast<uint8_t>(_area - MemArea_X), true, _offset | 0xff0000, _value, getPC().toWord());
 		perif[_area - MemArea_X]->write(_offset | 0xff0000, _value );
 		return true;
 	}
@@ -1075,7 +1125,11 @@ namespace dsp56k
 
 	TWord DSP::memReadPeriph(EMemArea _area, TWord _offset, Instruction _inst) const
 	{
-		return perif[_area - MemArea_X]->read(_offset | 0xff0000, _inst);
+		const auto v = perif[_area - MemArea_X]->read(_offset | 0xff0000, _inst);
+		if constexpr(!g_useJIT)
+		if(periphTraceActive())
+			periphTraceRecord(static_cast<uint8_t>(_area - MemArea_X), false, _offset | 0xff0000, v, getPC().toWord());
+		return v;
 	}
 	TWord DSP::memReadPeriphFFFF80(EMemArea _area, TWord _offset, Instruction _inst) const
 	{

@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "memtrace.h"
 
 
 #include <fstream>
@@ -114,6 +115,14 @@ namespace dsp56k
 #endif
 
 		memTranslateAddress(_area, _offset);
+
+		// The memory tracer's other call sites are all in jitmem.cpp, inside the
+		// JIT's C++ callbacks. Those reach this funnel too, so recording here
+		// unconditionally would log every JIT write twice; the interpreter, which
+		// never reaches them, is the case this exists for.
+		if constexpr(!g_useJIT)
+		if(memTraceActive())
+			memTraceRecord(static_cast<uint8_t>(_area), true, _offset, _value, m_dsp->getPC().toWord());
 
 #ifdef _DEBUG
 		assert(_offset < XIO_Reserved_High_First);
