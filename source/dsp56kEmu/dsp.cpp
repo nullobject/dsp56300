@@ -585,13 +585,19 @@ namespace dsp56k
 		const auto tracing = instTraceActive();
 		const auto repeatedPc = pcCurrentInstruction;
 
+		--reg.lc.var;
+
+		// After the decrement, which is where LC actually stands when the
+		// repetition runs, and which is also what the JIT's hook records. LC
+		// inside a REP cannot be read on real hardware, so this is a convention
+		// rather than a fact -- and it is the JIT's, deliberately, because that
+		// is the one the traces already in use carry.
 		if(tracing)
 		{
 			updateDirtyCCR();
 			callDSPInstTrace(this, repeatedPc);
 		}
 
-		--reg.lc.var;
 		execOp(op);
 
 		const auto& opCache = m_opcodeCache[repeatedPc];
@@ -601,6 +607,9 @@ namespace dsp56k
 		while( reg.lc.var > 0 )
 		{
 			--reg.lc.var;
+			// After the decrement, like the first repetition above. Doing it on
+			// one side there and the other side here skips a value between the
+			// first two records, which reads as a core that counts wrong.
 			if(tracing)
 			{
 				updateDirtyCCR();
